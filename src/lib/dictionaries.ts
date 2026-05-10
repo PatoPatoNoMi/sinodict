@@ -51,11 +51,14 @@ export interface SearchResult {
   ko?: KoEntry
 }
 
+export type LangKey = 'zh' | 'yue' | 'ja' | 'ko'
+
 export type WorkerInMsg = {
   type: 'search'
   id: number
   query: string
-  filter: 'all' | 'zh' | 'yue' | 'ja' | 'ko'
+  filter: 'all' | LangKey
+  favLang?: LangKey
 }
 
 export type WorkerOutMsg =
@@ -451,7 +454,7 @@ function scoreYue(e: YueEntry, q: string, qLow: string, cjk: boolean): number {
   return 0
 }
 
-type Scored = { zh?: ZhEntry; yue?: YueEntry; ja?: JaEntry[]; ko?: KoEntry; trad: string; simp: string; score: number }
+type Scored = { zh?: ZhEntry; yue?: YueEntry; ja?: JaEntry[]; ko?: KoEntry; trad: string; simp: string; score: number; favScore: number }
 
 // Per-language lookup indexes, built once per DictDB instance and cached
 interface DbIdx {
@@ -488,8 +491,9 @@ function getIdx(db: DictDB): DbIdx {
 export function search(
   query: string,
   db: DictDB,
-  filter: 'all' | 'zh' | 'yue' | 'ja' | 'ko' = 'all',
+  filter: 'all' | LangKey = 'all',
   limit = 50,
+  favLang?: LangKey,
 ): SearchResult[] {
   const q = query.trim()
   if (!q) return []
@@ -506,12 +510,14 @@ export function search(
     for (const e of db.zh) {
       const s = scoreZh(e, q, qLow, cjk)
       if (s === 0) continue
+      const fav = favLang === 'zh' ? s : 0
       const existing = byKey.get(e.traditional)
       if (existing) {
         if (s > existing.score) existing.score = s
+        if (fav > existing.favScore) existing.favScore = fav
         existing.zh = e
       } else {
-        byKey.set(e.traditional, { zh: e, trad: e.traditional, simp: e.simplified, score: s })
+        byKey.set(e.traditional, { zh: e, trad: e.traditional, simp: e.simplified, score: s, favScore: fav })
         simpIndex.set(e.simplified, e.traditional)
       }
     }
@@ -521,12 +527,14 @@ export function search(
     for (const e of db.yue) {
       const s = scoreYue(e, q, qLow, cjk)
       if (s === 0) continue
+      const fav = favLang === 'yue' ? s : 0
       const existing = byKey.get(e.traditional)
       if (existing) {
         if (s > existing.score) existing.score = s
+        if (fav > existing.favScore) existing.favScore = fav
         existing.yue = e
       } else {
-        byKey.set(e.traditional, { yue: e, trad: e.traditional, simp: e.simplified, score: s })
+        byKey.set(e.traditional, { yue: e, trad: e.traditional, simp: e.simplified, score: s, favScore: fav })
         simpIndex.set(e.simplified, e.traditional)
       }
     }
@@ -536,11 +544,13 @@ export function search(
     for (const e of db.ja) {
       const s = scoreJa(e, q, qLow, cjk, kana)
       if (s === 0) continue
+      const fav = favLang === 'ja' ? s : 0
       // Merge into ZH/YUE entry whose simplified matches this kanji (e.g. 猫→貓)
       const mergeKey = byKey.has(e.kanji) ? e.kanji : simpIndex.get(e.kanji)
       const existing = mergeKey !== undefined ? byKey.get(mergeKey) : undefined
       if (existing) {
         if (s > existing.score) existing.score = s
+        if (fav > existing.favScore) existing.favScore = fav
         if (!existing.ja) {
           existing.ja = [e]
         } else {
@@ -551,7 +561,7 @@ export function search(
           }
         }
       } else {
-        byKey.set(e.kanji, { ja: [e], trad: e.kanji, simp: e.kanji, score: s })
+        byKey.set(e.kanji, { ja: [e], trad: e.kanji, simp: e.kanji, score: s, favScore: fav })
       }
     }
   }
@@ -560,6 +570,7 @@ export function search(
     for (const e of db.ko) {
       const s = scoreKo(e, q, qLow, cjk)
       if (s === 0) continue
+      const fav = favLang === 'ko' ? s : 0
       // Merge into existing CJK entry by hanja (Korean uses traditional hanzi)
       // e.g. hanja="愛" merges into the 愛 card; hanja="見地" merges into 見地 card
       let mergeKey: string | undefined
@@ -572,10 +583,11 @@ export function search(
         // Keep the highest-scored KO entry per CJK card
         if (!existing.ko || s > existing.score) {
           if (s > existing.score) existing.score = s
+          if (fav > existing.favScore) existing.favScore = fav
           existing.ko = e
         }
       } else {
-        byKey.set(e.hangul, { ko: e, trad: e.hangul, simp: e.hangul, score: s })
+        byKey.set(e.hangul, { ko: e, trad: e.hangul, simp: e.hangul, score: s, favScore: fav })
       }
     }
   }
@@ -602,6 +614,10 @@ export function search(
   return Array.from(byKey.values())
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score
+      // Secondary: prefer results with a direct favLang match over cross-linked ones
+      const aFav = a.favScore > 0 ? 1 : 0
+      const bFav = b.favScore > 0 ? 1 : 0
+      if (bFav !== aFav) return bFav - aFav
       // Tiebreaker: prefer shorter words (single-char beats multi-char at same score)
       return a.trad.length - b.trad.length
     })

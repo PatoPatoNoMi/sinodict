@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import type { SearchResult } from "./lib/dictionaries"
 import { useDict } from "./lib/DictContext"
+import { useSettings } from "./lib/SettingsContext"
 import { EntryCard } from "./components/shared"
 import { AppHeader } from "./components/AppHeader"
 import "./App.css"
@@ -18,6 +19,7 @@ const FILTERS: { key: LangFilter; label: string }[] = [
 
 export default function SearchPage() {
   const { loading, loadError, search } = useDict()
+  const { favLang } = useSettings()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "")
@@ -45,7 +47,7 @@ export default function SearchPage() {
     }
     let stale = false
     const timer = setTimeout(() => {
-      search(query.trim(), filter).then((res) => {
+      search(query.trim(), filter, filter === 'all' && favLang !== 'none' ? favLang : undefined).then((res) => {
         if (!stale) setResults(res)
       })
     }, 150)

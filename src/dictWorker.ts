@@ -15,7 +15,7 @@ function post(msg: WorkerOutMsg): void {
 self.addEventListener('message', (e: Event) => {
   const msg = (e as MessageEvent).data as WorkerInMsg
   if (msg.type === 'search') {
-    post({ type: 'results', id: msg.id, results: search(msg.query, db, msg.filter) })
+    post({ type: 'results', id: msg.id, results: search(msg.query, db, msg.filter, 50, msg.favLang) })
   }
 })
 

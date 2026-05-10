@@ -23,9 +23,17 @@ function GearIcon() {
   )
 }
 
+const FAV_LANGS = [
+  { key: 'none', label: 'None' },
+  { key: 'ja',   label: 'JA' },
+  { key: 'ko',   label: 'KO' },
+  { key: 'zh',   label: 'ZH' },
+  { key: 'yue',  label: 'YUE' },
+] as const
+
 export function AppHeader() {
   const [theme, setTheme] = useTheme()
-  const { pinyinMode, setPinyinMode } = useSettings()
+  const { pinyinMode, setPinyinMode, favLang, setFavLang } = useSettings()
   const [open, setOpen] = useState(false)
 
   return (
@@ -89,6 +97,21 @@ export function AppHeader() {
                 >
                   Numbers <span className="settings-eg">sen1 ai4</span>
                 </button>
+              </div>
+            </div>
+            <div className="settings-row">
+              <span className="settings-label">Priority</span>
+              <div className="settings-seg">
+                {FAV_LANGS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={favLang === key ? 'active' : ''}
+                    onClick={() => setFavLang(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
