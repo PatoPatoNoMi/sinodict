@@ -17,12 +17,14 @@ export interface PitchAccentEntry {
   accent: string      // e.g. "LHH-H"
   sourceCount: number
   hasNHK: boolean
+  sources: string[]
 }
 
 export interface JaEntry {
   kanji: string
   reading: string
   definitions: string[]
+  pos: string[]
   archaic?: true
   pitchAccents?: PitchAccentEntry[]
 }
@@ -63,6 +65,31 @@ export type WorkerOutMsg =
 
 function kataToHira(s: string): string {
   return s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+}
+
+// Convert CC-CEDICT number-tone pinyin (sen1) to diacritic form (sēn)
+export function numbersToDiacritics(pinyin: string): string {
+  const tv: Record<string, string[]> = {
+    a: ['ā','á','ǎ','à','a'], e: ['ē','é','ě','è','e'],
+    i: ['ī','í','ǐ','ì','i'], o: ['ō','ó','ǒ','ò','o'],
+    u: ['ū','ú','ǔ','ù','u'], ü: ['ǖ','ǘ','ǚ','ǜ','ü'],
+  }
+  return pinyin.split(' ').map((syl) => {
+    const m = syl.match(/^([A-Za-zÜü:]+)([1-5])$/)
+    if (!m) return syl
+    const tone = parseInt(m[2]) - 1
+    let s = m[1].toLowerCase().replace(/u:/g, 'ü')
+    let idx = -1
+    if (s.includes('a')) idx = s.indexOf('a')
+    else if (s.includes('e')) idx = s.indexOf('e')
+    else if (s.includes('ou')) idx = s.indexOf('o')
+    else for (let i = s.length - 1; i >= 0; i--) {
+      if ('iouü'.includes(s[i])) { idx = i; break }
+    }
+    if (idx === -1) return s  // no vowel (e.g. standalone r)
+    const marked = s.slice(0, idx) + (tv[s[idx]]?.[tone] ?? s[idx]) + s.slice(idx + 1)
+    return m[1][0] === m[1][0].toUpperCase() ? marked[0].toUpperCase() + marked.slice(1) : marked
+  }).join(' ')
 }
 
 // Hepburn romaji → hiragana (greedy, longest-match first)
@@ -124,6 +151,32 @@ function romajiToHiragana(s: string): string {
 }
 
 // EDICT format: Kanji [reading] /def1/def2/(P)/ or Kana /def1/def2/
+const EDICT_POS = new Set([
+  'n','n-adv','n-pr','n-pref','n-suf','n-t',
+  'adj-f','adj-i','adj-ix','adj-kari','adj-ku','adj-na','adj-nari','adj-no','adj-pn','adj-shiku','adj-t',
+  'v1','v1-s','vk','vn','vr','vs','vs-c','vs-i','vs-s','vz','vi','vt','v-unspec',
+  'v5aru','v5b','v5g','v5k','v5k-s','v5m','v5n','v5r','v5r-i','v5s','v5t','v5u','v5u-s','v5uru',
+  'v2a-s','v2b-k','v2b-s','v2d-k','v2d-s','v2g-k','v2g-s','v2h-k','v2h-s','v2k-k','v2k-s',
+  'v2m-k','v2m-s','v2n-s','v2r-k','v2r-s','v2s-s','v2t-k','v2t-s','v2w-s','v2y-k','v2y-s','v2z-s',
+  'v4b','v4g','v4h','v4k','v4m','v4n','v4r','v4s','v4t',
+  'adv','adv-to','aux','aux-adj','aux-v','conj','cop','ctr','exp','int','num','pn','pref','prt','suf','unc',
+])
+
+function extractPos(defsRaw: string): string[] {
+  const seen = new Set<string>()
+  for (const def of defsRaw.split('/')) {
+    const m = def.match(/^(\([^)]+\)\s*)+/)
+    if (!m) continue
+    for (const [, inner] of m[0].matchAll(/\(([^)]+)\)/g)) {
+      for (const tag of inner.split(',')) {
+        const t = tag.trim()
+        if (EDICT_POS.has(t)) seen.add(t)
+      }
+    }
+  }
+  return [...seen]
+}
+
 function parseEdictLine(line: string): JaEntry | null {
   if (!line || line.charCodeAt(0) === 0x3000) return null // skip header (full-width space)
   const slashI = line.indexOf('/')
@@ -147,6 +200,7 @@ function parseEdictLine(line: string): JaEntry | null {
   }
 
   const archaic = defsRaw.includes('(arch)') || undefined
+  const pos = extractPos(defsRaw)
 
   // Strip ALL leading POS/sense-number groups: "(n) (1) cat..." → "cat..."
   const definitions = defsRaw
@@ -155,7 +209,7 @@ function parseEdictLine(line: string): JaEntry | null {
     .filter((d) => d.length > 0)
 
   if (!kanji || definitions.length === 0) return null
-  return { kanji, reading, definitions, archaic }
+  return { kanji, reading, definitions, pos, archaic }
 }
 
 export function parseEdict(text: string): JaEntry[] {
@@ -399,6 +453,38 @@ function scoreYue(e: YueEntry, q: string, qLow: string, cjk: boolean): number {
 
 type Scored = { zh?: ZhEntry; yue?: YueEntry; ja?: JaEntry[]; ko?: KoEntry; trad: string; simp: string; score: number }
 
+// Per-language lookup indexes, built once per DictDB instance and cached
+interface DbIdx {
+  zhByTrad: Map<string, ZhEntry>
+  zhBySimp: Map<string, ZhEntry>
+  yueByTrad: Map<string, YueEntry>
+  jaByKanji: Map<string, JaEntry[]>
+}
+const dbIdxCache = new WeakMap<DictDB, DbIdx>()
+function getIdx(db: DictDB): DbIdx {
+  const cached = dbIdxCache.get(db)
+  if (cached) return cached
+  const zhByTrad = new Map<string, ZhEntry>()
+  const zhBySimp = new Map<string, ZhEntry>()
+  for (const e of db.zh) {
+    if (!zhByTrad.has(e.traditional)) zhByTrad.set(e.traditional, e)
+    if (!zhBySimp.has(e.simplified)) zhBySimp.set(e.simplified, e)
+  }
+  const yueByTrad = new Map<string, YueEntry>()
+  for (const e of db.yue) {
+    if (!yueByTrad.has(e.traditional)) yueByTrad.set(e.traditional, e)
+  }
+  const jaByKanji = new Map<string, JaEntry[]>()
+  for (const e of db.ja) {
+    const arr = jaByKanji.get(e.kanji)
+    if (arr) arr.push(e)
+    else jaByKanji.set(e.kanji, [e])
+  }
+  const idx: DbIdx = { zhByTrad, zhBySimp, yueByTrad, jaByKanji }
+  dbIdxCache.set(db, idx)
+  return idx
+}
+
 export function search(
   query: string,
   db: DictDB,
@@ -494,11 +580,33 @@ export function search(
     }
   }
 
+  // Cross-language linking: for any CJK result that matched in one language,
+  // pull in the same character's entries from other languages regardless of score.
+  const idx = getIdx(db)
+  for (const scored of byKey.values()) {
+    if (!hasCJK(scored.trad)) continue
+    if (!scored.zh) {
+      scored.zh = idx.zhByTrad.get(scored.trad) ?? idx.zhBySimp.get(scored.trad)
+    }
+    if (!scored.yue) {
+      const tradKey = scored.zh?.traditional ?? scored.trad
+      scored.yue = idx.yueByTrad.get(tradKey) ?? idx.yueByTrad.get(scored.trad)
+    }
+    if (!scored.ja) {
+      const entries = idx.jaByKanji.get(scored.trad) ?? idx.jaByKanji.get(scored.simp)
+      if (entries && entries.length > 0)
+        scored.ja = [...entries].sort((a, b) => (a.archaic ? 1 : 0) - (b.archaic ? 1 : 0))
+    }
+  }
+
   return Array.from(byKey.values())
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score
+      // Tiebreaker: prefer shorter words (single-char beats multi-char at same score)
+      return a.trad.length - b.trad.length
+    })
     .slice(0, limit)
     .map(({ trad, simp, zh, yue, ja, ko }) => {
-      // Sort JA readings: archaic entries go last
       if (ja && ja.length > 1) ja.sort((a, b) => (a.archaic ? 1 : 0) - (b.archaic ? 1 : 0))
       return { traditional: trad, simplified: simp, zh, yue, ja, ko }
     })
@@ -509,6 +617,7 @@ interface PitchRaw {
   accent: string
   sourceCount: number
   hasNHK: boolean
+  sources: string[]
 }
 
 function parsePitchCsv(text: string): Map<string, PitchRaw[]> {
@@ -529,10 +638,11 @@ function parsePitchCsv(text: string): Map<string, PitchRaw[]> {
     const i3 = r2.indexOf(',')
     if (i3 === -1) continue
     const accent = r2.slice(0, i3)
-    const sources = r2.slice(i3 + 1)
+    const sourcesRaw = r2.slice(i3 + 1)
+    const sources = sourcesRaw.split('|').map((s) => s.trim()).filter(Boolean)
     const hasNHK = sources.includes('NHK')
-    const sourceCount = (sources.match(/\|/g)?.length ?? 0) + 1
-    const entry: PitchRaw = { kana, accent, sourceCount, hasNHK }
+    const sourceCount = sources.length
+    const entry: PitchRaw = { kana, accent, sourceCount, hasNHK, sources }
     const existing = map.get(word)
     if (existing) existing.push(entry)
     else map.set(word, [entry])
@@ -551,6 +661,6 @@ export function linkPitchAccent(ja: JaEntry[], pitchText: string): void {
       if (a.hasNHK !== b.hasNHK) return a.hasNHK ? -1 : 1
       return b.sourceCount - a.sourceCount
     })
-    entry.pitchAccents = matching.map(({ accent, sourceCount, hasNHK }) => ({ accent, sourceCount, hasNHK }))
+    entry.pitchAccents = matching.map(({ accent, sourceCount, hasNHK, sources }) => ({ accent, sourceCount, hasNHK, sources }))
   }
 }

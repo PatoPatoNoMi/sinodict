@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
 import type { SearchResult } from '../lib/dictionaries'
+import { numbersToDiacritics } from '../lib/dictionaries'
+import { useSettings } from '../lib/SettingsContext'
 
 export type Lang = 'zh' | 'yue' | 'ja' | 'ko'
 
@@ -46,6 +48,8 @@ export function MoonIcon() {
 }
 
 export function EntryCard({ result }: { result: SearchResult }) {
+  const { pinyinMode } = useSettings()
+  const py = (raw: string) => pinyinMode === 'diacritics' ? numbersToDiacritics(raw) : raw
   const ja0 = result.ja?.[0]
   const primaryDef = result.zh?.definitions[0] ?? result.yue?.definitions[0] ?? ja0?.definitions[0] ?? result.ko?.definitions[0] ?? ''
   const showAlt = result.simplified !== result.traditional
@@ -81,7 +85,7 @@ export function EntryCard({ result }: { result: SearchResult }) {
         {result.zh && (
           <span className="entry-reading-pill">
             <span className="dot dot-zh" />
-            {result.zh.pinyin}
+            {py(result.zh.pinyin)}
           </span>
         )}
         {result.yue && (

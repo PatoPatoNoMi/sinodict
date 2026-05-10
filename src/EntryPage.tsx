@@ -1,14 +1,79 @@
-import { useLocation, useParams, Link } from 'react-router-dom'
-import { useState, useEffect } from 'react'
-import { useDict } from './lib/DictContext'
-import { useTheme } from './lib/useTheme'
-import { LangBadge, EntryCard, SunIcon, MoonIcon, LANG_LABEL } from './components/shared'
-import type { SearchResult, PitchAccentEntry } from './lib/dictionaries'
-import './App.css'
+import { useLocation, useParams, Link } from "react-router-dom"
+import { useState, useEffect } from "react"
+import { useDict } from "./lib/DictContext"
+import { useSettings } from "./lib/SettingsContext"
+import { numbersToDiacritics } from "./lib/dictionaries"
+import { LangBadge, EntryCard, LANG_LABEL } from "./components/shared"
+import { AppHeader } from "./components/AppHeader"
+import type { SearchResult, PitchAccentEntry } from "./lib/dictionaries"
+import "./App.css"
+
+const POS_LABEL: Record<string, string> = {
+  n: "noun",
+  "n-adv": "adv noun",
+  "n-pr": "proper noun",
+  "n-pref": "noun pref",
+  "n-suf": "noun suf",
+  "n-t": "temporal noun",
+  "adj-i": "i-adj",
+  "adj-ix": "i-adj",
+  "adj-na": "na-adj",
+  "adj-no": "no-adj",
+  "adj-pn": "prenominal",
+  "adj-t": "taru-adj",
+  "adj-f": "prenominal",
+  "adj-kari": "kari-adj",
+  "adj-ku": "ku-adj",
+  "adj-nari": "nari-adj",
+  "adj-shiku": "shiku-adj",
+  v1: "ichidan",
+  "v1-s": "ichidan",
+  vk: "kuru verb",
+  vs: "suru verb",
+  "vs-i": "suru verb",
+  "vs-s": "suru verb",
+  "vs-c": "suru verb",
+  vz: "zuru verb",
+  vn: "nu verb",
+  vr: "ru verb",
+  "v-unspec": "verb",
+  vi: "intransitive",
+  vt: "transitive",
+  v5aru: "godan",
+  v5b: "godan",
+  v5g: "godan",
+  v5k: "godan",
+  "v5k-s": "godan",
+  v5m: "godan",
+  v5n: "godan",
+  v5r: "godan",
+  "v5r-i": "godan",
+  v5s: "godan",
+  v5t: "godan",
+  v5u: "godan",
+  "v5u-s": "godan",
+  v5uru: "godan",
+  adv: "adverb",
+  "adv-to": "to-adverb",
+  aux: "auxiliary",
+  "aux-adj": "aux adj",
+  "aux-v": "aux verb",
+  conj: "conjunction",
+  cop: "copula",
+  ctr: "counter",
+  exp: "expression",
+  int: "interjection",
+  num: "numeric",
+  pn: "pronoun",
+  pref: "prefix",
+  prt: "particle",
+  suf: "suffix",
+  unc: "unclassified",
+}
 
 // Split hiragana/katakana into moras, keeping compound kana (きゃ, ちょ, etc.) together
 function splitMoras(kana: string): string[] {
-  const small = new Set('ぁぃぅぇぉゃゅょゎァィゥェォャュョヮ')
+  const small = new Set("ぁぃぅぇぉゃゅょゎァィゥェォャュョヮ")
   const moras: string[] = []
   for (let i = 0; i < kana.length; i++) {
     if (i + 1 < kana.length && small.has(kana[i + 1])) {
@@ -22,63 +87,38 @@ function splitMoras(kana: string): string[] {
 }
 
 function PitchChart({ kana, pa }: { kana: string; pa: PitchAccentEntry }) {
-  const hyphen = pa.accent.indexOf('-')
+  const hyphen = pa.accent.indexOf("-")
   if (hyphen === -1) return null
   const wordAcc = pa.accent.slice(0, hyphen)
   const particleAcc = pa.accent.slice(hyphen + 1)
 
   const moras = splitMoras(kana)
-  if (moras.length !== wordAcc.length) return null // safety: malformed entry
+  if (moras.length !== wordAcc.length) return null
 
-  const chars = [...moras, 'が']
-  const levels = (wordAcc + particleAcc).split('').map((c) => (c === 'H' ? 1 : 0))
-  if (chars.length !== levels.length) return null
-
-  const W = 32
-  const highY = 6
-  const lowY = 24
-  const svgH = 34
-  const totalW = chars.length * W
-
-  // Step-function path: step happens at the right edge of the previous mora
-  let d = `M ${W / 2} ${levels[0] === 1 ? highY : lowY}`
-  for (let i = 1; i < levels.length; i++) {
-    const prevY = levels[i - 1] === 1 ? highY : lowY
-    const currY = levels[i] === 1 ? highY : lowY
-    const currX = i * W + W / 2
-    if (prevY === currY) {
-      d += ` H ${currX}`
-    } else {
-      d += ` H ${i * W} V ${currY} H ${currX}`
-    }
-  }
-
-  const sepX = (chars.length - 1) * W
+  const wordLevels = wordAcc.split("").map((c) => (c === "H" ? 1 : 0))
+  const particleLevel = particleAcc[0] === "H" ? 1 : 0
 
   return (
     <div className="pitch-wrap">
-      <svg width={totalW} height={svgH} className="pitch-svg">
-        <line x1={sepX} y1={2} x2={sepX} y2={svgH - 2}
-          stroke="currentColor" strokeWidth="1" strokeDasharray="2,3" opacity="0.35" />
-        <path d={d} stroke="currentColor" strokeWidth="2" fill="none"
-          strokeLinecap="round" strokeLinejoin="round" />
-        {chars.map((_, i) => (
-          <circle key={i} cx={i * W + W / 2} cy={levels[i] === 1 ? highY : lowY}
-            r="2.5" fill="currentColor" />
-        ))}
-      </svg>
-      <div className="pitch-kana-row">
-        {chars.map((c, i) => (
-          <span key={i} className={`pitch-mora-label${i === chars.length - 1 ? ' pitch-mora-particle' : ''}`}
-            style={{ width: W }}>
-            {c}
-          </span>
-        ))}
+      <div className="pitch-text">
+        {moras.map((mora, i) => {
+          const isH = wordLevels[i] === 1
+          const nextLevel =
+            i + 1 < wordLevels.length ? wordLevels[i + 1] : particleLevel
+          const hasRight = (isH ? 1 : 0) !== nextLevel
+          let cls = "pitch-mora"
+          cls += isH ? " pitch-h" : " pitch-l"
+          if (hasRight) cls += " pitch-right"
+          return (
+            <span key={i} className={cls}>
+              {mora}
+            </span>
+          )
+        })}
       </div>
       <div className="pitch-meta">
-        <span className="pitch-accent-str">{pa.accent}</span>
-        {pa.hasNHK && <span className="pitch-tag-nhk">NHK</span>}
-        <span className="pitch-sources">{pa.sourceCount} sources</span>
+        <span className="pitch-sources-count">×{pa.sourceCount}</span>
+        <span className="pitch-sources-list">{pa.sources.join(", ")}</span>
       </div>
     </div>
   )
@@ -88,10 +128,15 @@ export default function EntryPage() {
   const { word } = useParams<{ word: string }>()
   const location = useLocation()
   const { search, loading } = useDict()
-  const [theme, setTheme] = useTheme()
+  const { pinyinMode } = useSettings()
+  const py = (raw: string) =>
+    pinyinMode === "diacritics" ? numbersToDiacritics(raw) : raw
 
-  const passedResult = (location.state as { result?: SearchResult } | null)?.result
-  const [result, setResult] = useState<SearchResult | null>(passedResult ?? null)
+  const passedResult = (location.state as { result?: SearchResult } | null)
+    ?.result
+  const [result, setResult] = useState<SearchResult | null>(
+    passedResult ?? null,
+  )
   const [similar, setSimilar] = useState<SearchResult[]>([])
   const [loadingEntry, setLoadingEntry] = useState(!passedResult)
 
@@ -104,9 +149,15 @@ export default function EntryPage() {
     if (passedResult || loading || !word) return
     const decoded = decodeURIComponent(word)
     setLoadingEntry(true)
-    search(decoded, 'all').then((results) => {
+    search(decoded, "all").then((results) => {
       const found =
-        results.find((r) => r.traditional === decoded || r.simplified === decoded || r.ja?.[0]?.kanji === decoded || r.ko?.hangul === decoded) ??
+        results.find(
+          (r) =>
+            r.traditional === decoded ||
+            r.simplified === decoded ||
+            r.ja?.[0]?.kanji === decoded ||
+            r.ko?.hangul === decoded,
+        ) ??
         results[0] ??
         null
       setResult(found)
@@ -119,12 +170,16 @@ export default function EntryPage() {
     const char = result.traditional
 
     const primaryDef =
-      result.zh?.definitions[0] ?? result.yue?.definitions[0] ?? result.ja?.[0]?.definitions[0] ?? result.ko?.definitions[0] ?? ''
-    const firstWord = primaryDef.toLowerCase().split(/[\s,;(]/)[0] ?? ''
+      result.zh?.definitions[0] ??
+      result.yue?.definitions[0] ??
+      result.ja?.[0]?.definitions[0] ??
+      result.ko?.definitions[0] ??
+      ""
+    const firstWord = primaryDef.toLowerCase().split(/[\s,;(]/)[0] ?? ""
 
-    const queries: Promise<SearchResult[]>[] = [search(char, 'all')]
+    const queries: Promise<SearchResult[]>[] = [search(char, "all")]
     if (firstWord.length > 2 && /^[a-z]/.test(firstWord)) {
-      queries.push(search(firstWord, 'all'))
+      queries.push(search(firstWord, "all"))
     }
 
     Promise.all(queries).then((groups) => {
@@ -146,21 +201,7 @@ export default function EntryPage() {
 
   return (
     <>
-      <header className="app-header">
-        <div className="app-header-inner">
-          <Link to="/" className="app-logo">
-            <span className="logo-sino">Sino</span>Dict
-          </Link>
-          <button
-            className="theme-toggle"
-            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-            aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-            type="button"
-          >
-            {theme === 'light' ? <MoonIcon /> : <SunIcon />}
-          </button>
-        </div>
-      </header>
+      <AppHeader />
 
       <main className="app-main">
         {loading || loadingEntry ? (
@@ -171,7 +212,9 @@ export default function EntryPage() {
           <div className="empty-state" style={{ paddingTop: 80 }}>
             <p className="empty-hint">Entry not found</p>
             <p className="empty-sub">
-              <Link to="/" style={{ color: 'var(--accent)' }}>Back to search</Link>
+              <Link to="/" style={{ color: "var(--accent)" }}>
+                Back to search
+              </Link>
             </p>
           </div>
         ) : (
@@ -179,7 +222,11 @@ export default function EntryPage() {
             <section className="entry-detail-hero">
               <div className="entry-detail-char-wrap">
                 <span className="entry-detail-char">{result.simplified}</span>
-                {showAlt && <span className="entry-detail-char-alt">{result.traditional}</span>}
+                {showAlt && (
+                  <span className="entry-detail-char-alt">
+                    {result.traditional}
+                  </span>
+                )}
               </div>
               <div className="entry-detail-badges">
                 {result.ja && <LangBadge lang="ja" />}
@@ -190,46 +237,89 @@ export default function EntryPage() {
             </section>
 
             <section className="entry-detail-langs">
-              {result.ja && result.ja.length > 0 && (
-                <div className="detail-entry de-ja">
-                  <div className="de-header">
-                    <LangBadge lang="ja" />
-                    <span className="de-lang-name">{LANG_LABEL.ja}</span>
-                  </div>
-                  {result.ja.map((jaEntry, idx) => (
-                    <div key={idx} className={`ja-sub-entry${jaEntry.archaic ? ' ja-sub-archaic' : ''}${idx > 0 ? ' ja-sub-divider' : ''}`}>
-                      {jaEntry.reading !== jaEntry.kanji && (
-                        <div className="de-reading">
-                          {jaEntry.reading}
-                          {jaEntry.archaic && <span className="ja-archaic-tag">archaic</span>}
-                        </div>
-                      )}
-                      {jaEntry.pitchAccents && jaEntry.pitchAccents.length > 0 && (
-                        <div className="pitch-accents">
-                          {jaEntry.pitchAccents.map((pa, i) => (
-                            <PitchChart key={i} kana={jaEntry.reading} pa={pa} />
-                          ))}
-                        </div>
-                      )}
-                      <div className="de-meanings">
-                        {jaEntry.definitions.slice(0, 12).map((d, i) => (
-                          <span key={i} className="de-meaning-pill">{d}</span>
-                        ))}
+              {result.ja &&
+                result.ja.length > 0 &&
+                (() => {
+                  const readingsWithAccent = new Set(
+                    result.ja
+                      .filter((e) => e.pitchAccents?.length)
+                      .map((e) => e.reading),
+                  )
+                  const jaEntries = result.ja.filter(
+                    (e) =>
+                      e.pitchAccents?.length ||
+                      !readingsWithAccent.has(e.reading),
+                  )
+                  return (
+                    <div className="detail-entry de-ja">
+                      <div className="de-header">
+                        <LangBadge lang="ja" />
+                        <span className="de-lang-name">{LANG_LABEL.ja}</span>
                       </div>
+                      {jaEntries.map((jaEntry, idx) => {
+                        const posPills = [
+                          ...new Set(
+                            jaEntry.pos
+                              .map((p) => POS_LABEL[p])
+                              .filter(Boolean),
+                          ),
+                        ]
+                        return (
+                          <div
+                            key={idx}
+                            className={`ja-sub-entry${jaEntry.archaic ? " ja-sub-archaic" : ""}${idx > 0 ? " ja-sub-divider" : ""}`}
+                          >
+                            {jaEntry.reading !== jaEntry.kanji && (
+                              <div className="de-reading">
+                                {jaEntry.reading}
+                              </div>
+                            )}
+                            {posPills.length > 0 && (
+                              <div className="ja-pos-tags">
+                                {posPills.map((label) => (
+                                  <span key={label} className="ja-pos-pill">
+                                    {label}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {jaEntry.pitchAccents &&
+                              jaEntry.pitchAccents.length > 0 && (
+                                <div className="pitch-accents">
+                                  {jaEntry.pitchAccents.map((pa, i) => (
+                                    <PitchChart
+                                      key={i}
+                                      kana={jaEntry.reading}
+                                      pa={pa}
+                                    />
+                                  ))}
+                                </div>
+                              )}
+                            <div className="de-meanings">
+                              {jaEntry.definitions.slice(0, 12).map((d, i) => (
+                                <span key={i} className="de-meaning-pill">
+                                  {d}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-                  ))}
-                </div>
-              )}
+                  )
+                })()}
               {result.zh && (
                 <div className="detail-entry de-zh">
                   <div className="de-header">
                     <LangBadge lang="zh" />
                     <span className="de-lang-name">{LANG_LABEL.zh}</span>
                   </div>
-                  <div className="de-reading">{result.zh.pinyin}</div>
+                  <div className="de-reading">{py(result.zh.pinyin)}</div>
                   <div className="de-meanings">
                     {result.zh.definitions.slice(0, 12).map((d, i) => (
-                      <span key={i} className="de-meaning-pill">{d}</span>
+                      <span key={i} className="de-meaning-pill">
+                        {d}
+                      </span>
                     ))}
                   </div>
                 </div>
@@ -242,11 +332,15 @@ export default function EntryPage() {
                   </div>
                   <div className="de-reading">{result.yue.jyutping}</div>
                   {result.yue.pinyin !== result.zh?.pinyin && (
-                    <div className="de-romanization">{result.yue.pinyin}</div>
+                    <div className="de-romanization">
+                      {py(result.yue.pinyin)}
+                    </div>
                   )}
                   <div className="de-meanings">
                     {result.yue.definitions.slice(0, 12).map((d, i) => (
-                      <span key={i} className="de-meaning-pill">{d}</span>
+                      <span key={i} className="de-meaning-pill">
+                        {d}
+                      </span>
                     ))}
                   </div>
                 </div>
@@ -258,12 +352,16 @@ export default function EntryPage() {
                     <span className="de-lang-name">{LANG_LABEL.ko}</span>
                   </div>
                   <div className="de-reading">{result.ko.hangul}</div>
-                  {result.ko.hanja && result.ko.hanja !== result.simplified && result.ko.hanja !== result.traditional && (
-                    <div className="de-romanization">{result.ko.hanja}</div>
-                  )}
+                  {result.ko.hanja &&
+                    result.ko.hanja !== result.simplified &&
+                    result.ko.hanja !== result.traditional && (
+                      <div className="de-romanization">{result.ko.hanja}</div>
+                    )}
                   <div className="de-meanings">
                     {result.ko.definitions.slice(0, 12).map((d, i) => (
-                      <span key={i} className="de-meaning-pill">{d}</span>
+                      <span key={i} className="de-meaning-pill">
+                        {d}
+                      </span>
                     ))}
                   </div>
                 </div>

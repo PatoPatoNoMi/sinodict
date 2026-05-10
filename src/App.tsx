@@ -1,6 +1,7 @@
 import { Routes, Route, useParams } from 'react-router-dom'
 import SearchPage from './SearchPage'
 import EntryPage from './EntryPage'
+import AboutPage from './AboutPage'
 
 function EntryPageKeyed() {
   const { word } = useParams()
@@ -12,6 +13,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<SearchPage />} />
       <Route path="/entry/:word" element={<EntryPageKeyed />} />
+      <Route path="/about" element={<AboutPage />} />
     </Routes>
   )
 }
