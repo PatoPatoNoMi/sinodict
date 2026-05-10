@@ -92,13 +92,13 @@ export default function AboutPage() {
             <div className="about-thanks">
               <p className="about-thanks-title">Special Thanks</p>
               <ul className="about-thanks-list">
-                <li>Adrian L.K. Krøger</li>
+                <li>Adrian L. K. Krøger</li>
                 <li>Henrik Berbom</li>
               </ul>
             </div>
           </div>
 
-<Link to="/" className="about-back">
+          <Link to="/" className="about-back">
             ← Back to search
           </Link>
         </section>
