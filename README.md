@@ -1,6 +1,7 @@
 # 🈶 SinoDict
 
 A feature-rich, open-source dictionary web app for **Japanese**, **Mandarin**, **Cantonese**, and **Korean** — built with React and TypeScript.
+[Try it here](https://patopatonomi.github.io/sinodict/)
 
 ![Status](https://img.shields.io/badge/status-active-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue) ![Built with React](https://img.shields.io/badge/built%20with-React-61DAFB?logo=react) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript)
 
