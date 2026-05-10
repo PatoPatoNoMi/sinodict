@@ -13,10 +13,18 @@ export interface YueEntry {
   definitions: string[]
 }
 
+export interface PitchAccentEntry {
+  accent: string      // e.g. "LHH-H"
+  sourceCount: number
+  hasNHK: boolean
+}
+
 export interface JaEntry {
   kanji: string
   reading: string
   definitions: string[]
+  archaic?: true
+  pitchAccents?: PitchAccentEntry[]
 }
 
 export interface KoEntry {
@@ -37,7 +45,7 @@ export interface SearchResult {
   simplified: string
   zh?: ZhEntry
   yue?: YueEntry
-  ja?: JaEntry
+  ja?: JaEntry[]   // multiple readings (e.g. ねこ + archaic ねこま)
   ko?: KoEntry
 }
 
@@ -52,6 +60,10 @@ export type WorkerOutMsg =
   | { type: 'ready' }
   | { type: 'error'; message: string }
   | { type: 'results'; id: number; results: SearchResult[] }
+
+function kataToHira(s: string): string {
+  return s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+}
 
 // Hepburn romaji → hiragana (greedy, longest-match first)
 const R2H: Record<string, string> = {
@@ -134,6 +146,8 @@ function parseEdictLine(line: string): JaEntry | null {
     reading = head.trim()
   }
 
+  const archaic = defsRaw.includes('(arch)') || undefined
+
   // Strip ALL leading POS/sense-number groups: "(n) (1) cat..." → "cat..."
   const definitions = defsRaw
     .split('/')
@@ -141,7 +155,7 @@ function parseEdictLine(line: string): JaEntry | null {
     .filter((d) => d.length > 0)
 
   if (!kanji || definitions.length === 0) return null
-  return { kanji, reading, definitions }
+  return { kanji, reading, definitions, archaic }
 }
 
 export function parseEdict(text: string): JaEntry[] {
@@ -383,7 +397,7 @@ function scoreYue(e: YueEntry, q: string, qLow: string, cjk: boolean): number {
   return 0
 }
 
-type Scored = { zh?: ZhEntry; yue?: YueEntry; ja?: JaEntry; ko?: KoEntry; trad: string; simp: string; score: number }
+type Scored = { zh?: ZhEntry; yue?: YueEntry; ja?: JaEntry[]; ko?: KoEntry; trad: string; simp: string; score: number }
 
 export function search(
   query: string,
@@ -441,9 +455,17 @@ export function search(
       const existing = mergeKey !== undefined ? byKey.get(mergeKey) : undefined
       if (existing) {
         if (s > existing.score) existing.score = s
-        existing.ja = e
+        if (!existing.ja) {
+          existing.ja = [e]
+        } else {
+          // Deduplicate: skip if a reading with the same hiragana already exists
+          const norm = kataToHira(e.reading)
+          if (!existing.ja.some((j) => kataToHira(j.reading) === norm)) {
+            existing.ja.push(e)
+          }
+        }
       } else {
-        byKey.set(e.kanji, { ja: e, trad: e.kanji, simp: e.kanji, score: s })
+        byKey.set(e.kanji, { ja: [e], trad: e.kanji, simp: e.kanji, score: s })
       }
     }
   }
@@ -475,5 +497,60 @@ export function search(
   return Array.from(byKey.values())
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map(({ trad, simp, zh, yue, ja, ko }) => ({ traditional: trad, simplified: simp, zh, yue, ja, ko }))
+    .map(({ trad, simp, zh, yue, ja, ko }) => {
+      // Sort JA readings: archaic entries go last
+      if (ja && ja.length > 1) ja.sort((a, b) => (a.archaic ? 1 : 0) - (b.archaic ? 1 : 0))
+      return { traditional: trad, simplified: simp, zh, yue, ja, ko }
+    })
+}
+
+interface PitchRaw {
+  kana: string
+  accent: string
+  sourceCount: number
+  hasNHK: boolean
+}
+
+function parsePitchCsv(text: string): Map<string, PitchRaw[]> {
+  const map = new Map<string, PitchRaw[]>()
+  const lines = text.split('\n')
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].charCodeAt(lines[i].length - 1) === 13
+      ? lines[i].slice(0, -1) : lines[i]
+    if (!line) continue
+    const i1 = line.indexOf(',')
+    if (i1 === -1) continue
+    const word = line.slice(0, i1)
+    const r1 = line.slice(i1 + 1)
+    const i2 = r1.indexOf(',')
+    if (i2 === -1) continue
+    const kana = r1.slice(0, i2)
+    const r2 = r1.slice(i2 + 1)
+    const i3 = r2.indexOf(',')
+    if (i3 === -1) continue
+    const accent = r2.slice(0, i3)
+    const sources = r2.slice(i3 + 1)
+    const hasNHK = sources.includes('NHK')
+    const sourceCount = (sources.match(/\|/g)?.length ?? 0) + 1
+    const entry: PitchRaw = { kana, accent, sourceCount, hasNHK }
+    const existing = map.get(word)
+    if (existing) existing.push(entry)
+    else map.set(word, [entry])
+  }
+  return map
+}
+
+export function linkPitchAccent(ja: JaEntry[], pitchText: string): void {
+  const map = parsePitchCsv(pitchText)
+  for (const entry of ja) {
+    const hiraReading = kataToHira(entry.reading)
+    const candidates = map.get(entry.kanji) ?? map.get(hiraReading) ?? []
+    const matching = candidates.filter((a) => a.kana === hiraReading)
+    if (matching.length === 0) continue
+    matching.sort((a, b) => {
+      if (a.hasNHK !== b.hasNHK) return a.hasNHK ? -1 : 1
+      return b.sourceCount - a.sourceCount
+    })
+    entry.pitchAccents = matching.map(({ accent, sourceCount, hasNHK }) => ({ accent, sourceCount, hasNHK }))
+  }
 }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { SearchResult, WorkerOutMsg } from './dictionaries'
 
 type Filter = 'all' | 'zh' | 'yue' | 'ja' | 'ko'
@@ -46,14 +46,14 @@ export function DictProvider({ children }: { children: ReactNode }) {
     return () => worker.terminate()
   }, [])
 
-  const search = (query: string, filter: Filter = 'all'): Promise<SearchResult[]> =>
+  const search = useCallback((query: string, filter: Filter = 'all'): Promise<SearchResult[]> =>
     new Promise((resolve) => {
       const trimmed = query.trim()
       if (!trimmed || !workerRef.current) { resolve([]); return }
       const id = nextIdRef.current++
       pendingRef.current.set(id, resolve)
       workerRef.current.postMessage({ type: 'search', id, query: trimmed, filter })
-    })
+    }), [])
 
   return <DictContext.Provider value={{ loading, loadError, search }}>{children}</DictContext.Provider>
 }

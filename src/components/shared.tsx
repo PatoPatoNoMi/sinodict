@@ -46,7 +46,8 @@ export function MoonIcon() {
 }
 
 export function EntryCard({ result }: { result: SearchResult }) {
-  const primaryDef = result.zh?.definitions[0] ?? result.yue?.definitions[0] ?? result.ja?.definitions[0] ?? result.ko?.definitions[0] ?? ''
+  const ja0 = result.ja?.[0]
+  const primaryDef = result.zh?.definitions[0] ?? result.yue?.definitions[0] ?? ja0?.definitions[0] ?? result.ko?.definitions[0] ?? ''
   const showAlt = result.simplified !== result.traditional
 
   return (
@@ -57,7 +58,7 @@ export function EntryCard({ result }: { result: SearchResult }) {
           {showAlt && <span className="entry-simp">{result.traditional}</span>}
         </div>
         <div className="entry-badges">
-          {result.ja && <LangBadge lang="ja" />}
+          {result.ja && result.ja.length > 0 && <LangBadge lang="ja" />}
           {result.ko && <LangBadge lang="ko" />}
           {result.zh && <LangBadge lang="zh" />}
           {result.yue && <LangBadge lang="yue" />}
@@ -65,10 +66,10 @@ export function EntryCard({ result }: { result: SearchResult }) {
       </div>
       <p className="entry-meaning">{primaryDef}</p>
       <div className="entry-readings">
-        {result.ja && result.ja.reading !== result.ja.kanji && (
+        {ja0 && ja0.reading !== ja0.kanji && (
           <span className="entry-reading-pill">
             <span className="dot dot-ja" />
-            {result.ja.reading}
+            {ja0.reading}
           </span>
         )}
         {result.ko && (

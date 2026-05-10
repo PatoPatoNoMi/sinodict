@@ -1,9 +1,10 @@
 import type { WorkerInMsg, WorkerOutMsg, DictDB } from './lib/dictionaries'
-import { parseCedict, parseCanto, parseEdict, parseKengdic, search } from './lib/dictionaries'
+import { parseCedict, parseCanto, parseEdict, parseKengdic, linkPitchAccent, search } from './lib/dictionaries'
 import cedictUrl from './dictionaries/cedict_ts.u8?url'
 import cantoUrl from './dictionaries/cccanto-webdist.txt?url'
 import edictUrl from './dictionaries/edict.txt?url'
 import kengdicUrl from './dictionaries/kengdic.tsv?url'
+import pitchUrl from './dictionaries/pitch_accent_dataset.csv?url'
 
 let db: DictDB = { zh: [], yue: [], ja: [], ko: [] }
 
@@ -26,16 +27,19 @@ async function fetchText(url: string): Promise<string> {
 
 async function load(): Promise<void> {
   try {
-    const [cedictText, cantoText, edictText, kengdicText] = await Promise.all([
+    const [cedictText, cantoText, edictText, kengdicText, pitchText] = await Promise.all([
       fetchText(cedictUrl),
       fetchText(cantoUrl),
       fetchText(edictUrl),
       fetchText(kengdicUrl),
+      fetchText(pitchUrl),
     ])
+    const ja = parseEdict(edictText)
+    linkPitchAccent(ja, pitchText)
     db = {
       zh: parseCedict(cedictText),
       yue: parseCanto(cantoText),
-      ja: parseEdict(edictText),
+      ja,
       ko: parseKengdic(kengdicText),
     }
     post({ type: 'ready' })

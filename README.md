@@ -9,13 +9,15 @@ A feature-rich, open-source dictionary web app for **Japanese**, **Mandarin**, *
 ## ✨ Features
 
 ### ✅ Available Now
+
 - **Multi-language dictionary** — search across Japanese, Mandarin, Cantonese, and Korean in a single interface
 - **Flexible search** — look up by native characters (Hanzi / Kanji / Hangul), romanization (Pinyin / Jyutping / Romaji), or English meaning
 - **Smart script detection** — automatically identifies input language from the characters you type
 - **Related terms** — discover semantically linked words and expressions for each entry
+- **Japanese pitch accent** — standard pitch accent patterns displayed per entry
 
 ### 🚧 In Progress / Planned
-- **Japanese pitch accent** — standard pitch accent patterns displayed per entry
+
 - **Character writing practice** — animated stroke order and interactive writing practice for Chinese characters
 - **Pronunciation audio** — native speaker sound files for all four languages
 - **Example sentences** — real-world usage examples with translations
