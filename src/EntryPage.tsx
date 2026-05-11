@@ -370,7 +370,7 @@ export default function EntryPage() {
 
             {similar.length > 0 && (
               <section className="entry-similar-section">
-                <h2 className="entry-similar-title">Similar</h2>
+                <h2 className="entry-similar-title">Related</h2>
                 <div className="results-list">
                   {similar.map((r) => (
                     <EntryCard key={r.traditional} result={r} />
