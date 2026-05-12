@@ -26,6 +26,7 @@ export interface JaEntry {
   definitions: string[]
   pos: string[]
   archaic?: true
+  common?: true         // EDICT (P) marker — appears in priority word lists
   pitchAccents?: PitchAccentEntry[]
 }
 
@@ -40,6 +41,7 @@ export interface DictDB {
   yue: YueEntry[]
   ja: JaEntry[]
   ko: KoEntry[]
+  zhFreq: Map<string, number>   // traditional or simplified → rank (1 = most frequent)
 }
 
 export interface SearchResult {
@@ -203,6 +205,7 @@ function parseEdictLine(line: string): JaEntry | null {
   }
 
   const archaic = defsRaw.includes('(arch)') || undefined
+  const common = defsRaw.includes('(P)') || undefined
   const pos = extractPos(defsRaw)
 
   // Strip ALL leading POS/sense-number groups: "(n) (1) cat..." → "cat..."
@@ -212,7 +215,7 @@ function parseEdictLine(line: string): JaEntry | null {
     .filter((d) => d.length > 0)
 
   if (!kanji || definitions.length === 0) return null
-  return { kanji, reading, definitions, pos, archaic }
+  return { kanji, reading, definitions, pos, archaic, common }
 }
 
 export function parseEdict(text: string): JaEntry[] {
@@ -488,6 +491,13 @@ function getIdx(db: DictDB): DbIdx {
   return idx
 }
 
+function freqRankOf(s: Scored, zhFreq: Map<string, number>): number {
+  let rank = Infinity
+  if (s.zh) rank = Math.min(rank, zhFreq.get(s.zh.traditional) ?? zhFreq.get(s.zh.simplified) ?? Infinity)
+  if (s.yue) rank = Math.min(rank, zhFreq.get(s.yue.traditional) ?? zhFreq.get(s.yue.simplified) ?? Infinity)
+  return rank
+}
+
 export function search(
   query: string,
   db: DictDB,
@@ -607,7 +617,10 @@ export function search(
     if (!scored.ja) {
       const entries = idx.jaByKanji.get(scored.trad) ?? idx.jaByKanji.get(scored.simp)
       if (entries && entries.length > 0)
-        scored.ja = [...entries].sort((a, b) => (a.archaic ? 1 : 0) - (b.archaic ? 1 : 0))
+        scored.ja = [...entries].sort((a, b) => {
+          const cd = (b.common ? 1 : 0) - (a.common ? 1 : 0)
+          return cd !== 0 ? cd : (a.archaic ? 1 : 0) - (b.archaic ? 1 : 0)
+        })
     }
   }
 
@@ -618,12 +631,25 @@ export function search(
       const aFav = a.favScore > 0 ? 1 : 0
       const bFav = b.favScore > 0 ? 1 : 0
       if (bFav !== aFav) return bFav - aFav
-      // Tiebreaker: prefer shorter words (single-char beats multi-char at same score)
+      // Tertiary: (P) common Japanese words before non-common
+      const aCommon = a.ja?.some(e => e.common) ? 1 : 0
+      const bCommon = b.ja?.some(e => e.common) ? 1 : 0
+      if (bCommon !== aCommon) return bCommon - aCommon
+      // Quaternary: higher-frequency Chinese words (lower rank = more common)
+      const aRank = freqRankOf(a, db.zhFreq)
+      const bRank = freqRankOf(b, db.zhFreq)
+      if (aRank !== bRank) return aRank - bRank
+      // Final: prefer shorter words (single-char beats multi-char at same score)
       return a.trad.length - b.trad.length
     })
     .slice(0, limit)
     .map(({ trad, simp, zh, yue, ja, ko }) => {
-      if (ja && ja.length > 1) ja.sort((a, b) => (a.archaic ? 1 : 0) - (b.archaic ? 1 : 0))
+      if (ja && ja.length > 1) {
+        ja.sort((a, b) => {
+          const cd = (b.common ? 1 : 0) - (a.common ? 1 : 0)
+          return cd !== 0 ? cd : (a.archaic ? 1 : 0) - (b.archaic ? 1 : 0)
+        })
+      }
       return { traditional: trad, simplified: simp, zh, yue, ja, ko }
     })
 }
@@ -666,12 +692,30 @@ function parsePitchCsv(text: string): Map<string, PitchRaw[]> {
   return map
 }
 
+export function parseZhFreq(csv: string): Map<string, number> {
+  const map = new Map<string, number>()
+  const lines = csv.split('\n')
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (!line) continue
+    const parts = line.split(',')
+    if (parts.length < 3) continue
+    const rank = parseInt(parts[0], 10)
+    const traditional = parts[1]
+    const simplified = parts[2]
+    if (isNaN(rank)) continue
+    if (traditional && !map.has(traditional)) map.set(traditional, rank)
+    if (simplified && simplified !== traditional && !map.has(simplified)) map.set(simplified, rank)
+  }
+  return map
+}
+
 export function linkPitchAccent(ja: JaEntry[], pitchText: string): void {
   const map = parsePitchCsv(pitchText)
   for (const entry of ja) {
     const hiraReading = kataToHira(entry.reading)
     const candidates = map.get(entry.kanji) ?? map.get(hiraReading) ?? []
-    const matching = candidates.filter((a) => a.kana === hiraReading)
+    const matching = candidates.filter((a) => kataToHira(a.kana) === hiraReading)
     if (matching.length === 0) continue
     matching.sort((a, b) => {
       if (a.hasNHK !== b.hasNHK) return a.hasNHK ? -1 : 1

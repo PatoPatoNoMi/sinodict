@@ -1,12 +1,23 @@
 import { useLocation, useParams, Link } from "react-router-dom"
-import { useState, useEffect } from "react"
+import { useState, useEffect, type ReactNode } from "react"
 import { useDict } from "./lib/DictContext"
 import { useSettings } from "./lib/SettingsContext"
 import { numbersToDiacritics } from "./lib/dictionaries"
-import { LangBadge, EntryCard, LANG_LABEL } from "./components/shared"
+import { LangBadge, EntryCard, LANG_LABEL, SpeakButton } from "./components/shared"
 import { AppHeader } from "./components/AppHeader"
+import { StrokeOrder } from "./components/StrokeOrder"
 import type { SearchResult, PitchAccentEntry } from "./lib/dictionaries"
 import "./App.css"
+
+type SimilarFilter = "all" | "zh" | "yue" | "ja" | "ko"
+
+const SIMILAR_FILTERS: { key: SimilarFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "ja", label: "JA" },
+  { key: "ko", label: "KO" },
+  { key: "zh", label: "ZH" },
+  { key: "yue", label: "YUE" },
+]
 
 const POS_LABEL: Record<string, string> = {
   n: "noun",
@@ -128,7 +139,7 @@ export default function EntryPage() {
   const { word } = useParams<{ word: string }>()
   const location = useLocation()
   const { search, loading } = useDict()
-  const { pinyinMode } = useSettings()
+  const { pinyinMode, favLang } = useSettings()
   const py = (raw: string) =>
     pinyinMode === "diacritics" ? numbersToDiacritics(raw) : raw
 
@@ -138,6 +149,9 @@ export default function EntryPage() {
     passedResult ?? null,
   )
   const [similar, setSimilar] = useState<SearchResult[]>([])
+  const [similarFilter, setSimilarFilter] = useState<SimilarFilter>(() =>
+    favLang !== "none" ? favLang : "all"
+  )
   const [loadingEntry, setLoadingEntry] = useState(!passedResult)
 
   // Scroll to top on every mount (key prop in App.tsx ensures remount on navigation)
@@ -197,6 +211,12 @@ export default function EntryPage() {
     })
   }, [result, loading, search])
 
+  const filteredSimilar = similarFilter === "all"
+    ? similar
+    : similar.filter((r) =>
+        similarFilter === "ja" ? !!(r.ja?.length) : r[similarFilter] !== undefined
+      )
+
   const showAlt = result && result.simplified !== result.traditional
 
   return (
@@ -236,33 +256,36 @@ export default function EntryPage() {
               </div>
             </section>
 
+            <StrokeOrder word={result.simplified} />
+
             <section className="entry-detail-langs">
-              {result.ja &&
-                result.ja.length > 0 &&
-                (() => {
+              {(() => {
+                const DEFAULT_ORDER = ['ja', 'zh', 'yue', 'ko'] as const
+                type L = typeof DEFAULT_ORDER[number]
+                const orderedLangs: L[] = favLang !== 'none'
+                  ? [favLang as L, ...DEFAULT_ORDER.filter(l => l !== favLang)]
+                  : [...DEFAULT_ORDER]
+
+                const sections: Partial<Record<L, ReactNode>> = {}
+
+                if (result.ja && result.ja.length > 0) {
                   const readingsWithAccent = new Set(
-                    result.ja
-                      .filter((e) => e.pitchAccents?.length)
-                      .map((e) => e.reading),
+                    result.ja.filter((e) => e.pitchAccents?.length).map((e) => e.reading),
                   )
                   const jaEntries = result.ja.filter(
-                    (e) =>
-                      e.pitchAccents?.length ||
-                      !readingsWithAccent.has(e.reading),
+                    (e) => e.pitchAccents?.length || !readingsWithAccent.has(e.reading),
                   )
-                  return (
+                  const jaSpeak = jaEntries.find(e => e.common) ?? jaEntries[0]
+                  sections.ja = (
                     <div className="detail-entry de-ja">
                       <div className="de-header">
                         <LangBadge lang="ja" />
                         <span className="de-lang-name">{LANG_LABEL.ja}</span>
+                        {jaSpeak && <SpeakButton text={jaSpeak.reading} lang="ja-JP" />}
                       </div>
                       {jaEntries.map((jaEntry, idx) => {
                         const posPills = [
-                          ...new Set(
-                            jaEntry.pos
-                              .map((p) => POS_LABEL[p])
-                              .filter(Boolean),
-                          ),
+                          ...new Set(jaEntry.pos.map((p) => POS_LABEL[p]).filter(Boolean)),
                         ]
                         return (
                           <div
@@ -270,36 +293,28 @@ export default function EntryPage() {
                             className={`ja-sub-entry${jaEntry.archaic ? " ja-sub-archaic" : ""}${idx > 0 ? " ja-sub-divider" : ""}`}
                           >
                             {jaEntry.reading !== jaEntry.kanji && (
-                              <div className="de-reading">
-                                {jaEntry.reading}
-                              </div>
+                              <div className="de-reading">{jaEntry.reading}</div>
                             )}
-                            {posPills.length > 0 && (
+                            {(jaEntry.common || posPills.length > 0) && (
                               <div className="ja-pos-tags">
+                                {jaEntry.common && (
+                                  <span className="common-pill">common</span>
+                                )}
                                 {posPills.map((label) => (
-                                  <span key={label} className="ja-pos-pill">
-                                    {label}
-                                  </span>
+                                  <span key={label} className="ja-pos-pill">{label}</span>
                                 ))}
                               </div>
                             )}
-                            {jaEntry.pitchAccents &&
-                              jaEntry.pitchAccents.length > 0 && (
-                                <div className="pitch-accents">
-                                  {jaEntry.pitchAccents.map((pa, i) => (
-                                    <PitchChart
-                                      key={i}
-                                      kana={jaEntry.reading}
-                                      pa={pa}
-                                    />
-                                  ))}
-                                </div>
-                              )}
+                            {jaEntry.pitchAccents && jaEntry.pitchAccents.length > 0 && (
+                              <div className="pitch-accents">
+                                {jaEntry.pitchAccents.map((pa, i) => (
+                                  <PitchChart key={i} kana={jaEntry.reading} pa={pa} />
+                                ))}
+                              </div>
+                            )}
                             <div className="de-meanings">
                               {jaEntry.definitions.slice(0, 12).map((d, i) => (
-                                <span key={i} className="de-meaning-pill">
-                                  {d}
-                                </span>
+                                <span key={i} className="de-meaning-pill">{d}</span>
                               ))}
                             </div>
                           </div>
@@ -307,74 +322,103 @@ export default function EntryPage() {
                       })}
                     </div>
                   )
-                })()}
-              {result.zh && (
-                <div className="detail-entry de-zh">
-                  <div className="de-header">
-                    <LangBadge lang="zh" />
-                    <span className="de-lang-name">{LANG_LABEL.zh}</span>
-                  </div>
-                  <div className="de-reading">{py(result.zh.pinyin)}</div>
-                  <div className="de-meanings">
-                    {result.zh.definitions.slice(0, 12).map((d, i) => (
-                      <span key={i} className="de-meaning-pill">
-                        {d}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {result.yue && (
-                <div className="detail-entry de-yue">
-                  <div className="de-header">
-                    <LangBadge lang="yue" />
-                    <span className="de-lang-name">{LANG_LABEL.yue}</span>
-                  </div>
-                  <div className="de-reading">{result.yue.jyutping}</div>
-                  {result.yue.pinyin !== result.zh?.pinyin && (
-                    <div className="de-romanization">
-                      {py(result.yue.pinyin)}
+                }
+
+                if (result.zh) {
+                  sections.zh = (
+                    <div className="detail-entry de-zh">
+                      <div className="de-header">
+                        <LangBadge lang="zh" />
+                        <span className="de-lang-name">{LANG_LABEL.zh}</span>
+                        <SpeakButton text={result.simplified} lang="zh-CN" />
+                      </div>
+                      <div className="de-reading">{py(result.zh.pinyin)}</div>
+                      <div className="de-meanings">
+                        {result.zh.definitions.slice(0, 12).map((d, i) => (
+                          <span key={i} className="de-meaning-pill">{d}</span>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                  <div className="de-meanings">
-                    {result.yue.definitions.slice(0, 12).map((d, i) => (
-                      <span key={i} className="de-meaning-pill">
-                        {d}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {result.ko && (
-                <div className="detail-entry de-ko">
-                  <div className="de-header">
-                    <LangBadge lang="ko" />
-                    <span className="de-lang-name">{LANG_LABEL.ko}</span>
-                  </div>
-                  <div className="de-reading">{result.ko.hangul}</div>
-                  {result.ko.hanja &&
-                    result.ko.hanja !== result.simplified &&
-                    result.ko.hanja !== result.traditional && (
-                      <div className="de-romanization">{result.ko.hanja}</div>
-                    )}
-                  <div className="de-meanings">
-                    {result.ko.definitions.slice(0, 12).map((d, i) => (
-                      <span key={i} className="de-meaning-pill">
-                        {d}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+                  )
+                }
+
+                if (result.yue) {
+                  sections.yue = (
+                    <div className="detail-entry de-yue">
+                      <div className="de-header">
+                        <LangBadge lang="yue" />
+                        <span className="de-lang-name">{LANG_LABEL.yue}</span>
+                        <SpeakButton text={result.traditional} lang="zh-HK" />
+                      </div>
+                      <div className="de-reading">{result.yue.jyutping}</div>
+                      {result.yue.pinyin !== result.zh?.pinyin && (
+                        <div className="de-romanization">{py(result.yue.pinyin)}</div>
+                      )}
+                      <div className="de-meanings">
+                        {result.yue.definitions.slice(0, 12).map((d, i) => (
+                          <span key={i} className="de-meaning-pill">{d}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                }
+
+                if (result.ko) {
+                  sections.ko = (
+                    <div className="detail-entry de-ko">
+                      <div className="de-header">
+                        <LangBadge lang="ko" />
+                        <span className="de-lang-name">{LANG_LABEL.ko}</span>
+                        <SpeakButton text={result.ko.hangul} lang="ko-KR" />
+                      </div>
+                      <div className="de-reading">{result.ko.hangul}</div>
+                      {result.ko.hanja &&
+                        result.ko.hanja !== result.simplified &&
+                        result.ko.hanja !== result.traditional && (
+                          <div className="de-romanization">{result.ko.hanja}</div>
+                        )}
+                      <div className="de-meanings">
+                        {result.ko.definitions.slice(0, 12).map((d, i) => (
+                          <span key={i} className="de-meaning-pill">{d}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                }
+
+                return orderedLangs.map(lang => sections[lang] ?? null)
+              })()}
             </section>
 
             {similar.length > 0 && (
               <section className="entry-similar-section">
-                <h2 className="entry-similar-title">Related</h2>
+                <div className="entry-similar-header">
+                  <h2 className="entry-similar-title">Related</h2>
+                  <div className="entry-similar-tabs" role="tablist">
+                    {SIMILAR_FILTERS.map(({ key, label }) => (
+                      <button
+                        key={key}
+                        role="tab"
+                        aria-selected={similarFilter === key}
+                        className={`similar-tab${similarFilter === key ? " active" : ""}`}
+                        onClick={() => setSimilarFilter(key)}
+                        type="button"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="results-list">
-                  {similar.map((r) => (
-                    <EntryCard key={r.traditional} result={r} />
-                  ))}
+                  {filteredSimilar.length > 0 ? (
+                    filteredSimilar.map((r) => (
+                      <EntryCard key={r.traditional} result={r} />
+                    ))
+                  ) : (
+                    <p className="empty-hint" style={{ paddingTop: 12 }}>
+                      No related entries
+                    </p>
+                  )}
                 </div>
               </section>
             )}

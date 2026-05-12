@@ -631,6 +631,41 @@
   color: var(--text);
 }
 
+.speak-btn {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.45);
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.speak-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.speak-btn.speaking {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.75);
+}
+
+[data-theme="dark"] .speak-btn {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .speak-btn:hover,
+[data-theme="dark"] .speak-btn.speaking {
+  background: rgba(255, 255, 255, 0.2);
+}
+
 .de-chars {
   font-size: 28px;
   font-weight: 400;
@@ -730,13 +765,48 @@
   padding-bottom: 48px;
 }
 
+.entry-similar-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
 .entry-similar-title {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  margin-bottom: 12px;
+}
+
+.entry-similar-tabs {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.similar-tab {
+  padding: 3px 11px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  transition: all 0.15s;
+}
+
+.similar-tab:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.similar-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 @media (max-width: 480px) {
@@ -778,6 +848,75 @@
   letter-spacing: 0.2px;
 }
 
+.common-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(22, 163, 74, 0.1);
+  color: #16a34a;
+  border: 1px solid rgba(22, 163, 74, 0.25);
+  letter-spacing: 0.2px;
+}
+
+[data-theme="dark"] .common-pill {
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.25);
+}
+
+/* ── Stroke order ───────────────────────────────── */
+.stroke-order-section {
+  padding: 4px 0 24px;
+  text-align: center;
+}
+
+.stroke-order-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+  margin-bottom: 14px;
+}
+
+.stroke-order-chars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.stroke-char-wrap {
+  width: 96px;
+  height: 96px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+}
+
+.stroke-char-wrap:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.stroke-replay-hint {
+  font-size: 11px;
+  color: var(--text-2);
+  opacity: 0.6;
+}
+
+@media (max-width: 480px) {
+  .stroke-char-wrap {
+    width: 80px;
+    height: 80px;
+  }
+}
+
 /* ── Pitch accent chart ─────────────────────────── */
 .pitch-accents {
   display: flex;
@@ -790,6 +929,7 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .pitch-text {
@@ -821,7 +961,9 @@
   display: flex;
   align-items: baseline;
   gap: 4px;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .pitch-sources-count {
@@ -834,6 +976,7 @@
   font-size: 11px;
   color: var(--text-2);
   opacity: 0.7;
+  word-break: break-word;
 }
 
 /* ── About page ─────────────────────────────────── */

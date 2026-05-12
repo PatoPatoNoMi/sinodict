@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { SearchResult } from '../lib/dictionaries'
 import { numbersToDiacritics } from '../lib/dictionaries'
@@ -21,6 +22,43 @@ export const LANG_SHORT: Record<Lang, string> = {
 
 export function LangBadge({ lang }: { lang: Lang }) {
   return <span className={`lang-badge lang-${lang}`}>{LANG_SHORT[lang]}</span>
+}
+
+export function SpeakButton({ text, lang }: { text: string; lang: string }) {
+  const [speaking, setSpeaking] = useState(false)
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null
+
+  function speak(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (speaking) {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+      return
+    }
+    const utt = new SpeechSynthesisUtterance(text)
+    utt.lang = lang
+    utt.onend = () => setSpeaking(false)
+    utt.onerror = () => setSpeaking(false)
+    window.speechSynthesis.cancel()
+    window.speechSynthesis.speak(utt)
+    setSpeaking(true)
+  }
+
+  return (
+    <button
+      className={`speak-btn${speaking ? ' speaking' : ''}`}
+      onClick={speak}
+      type="button"
+      aria-label="Listen to pronunciation"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      </svg>
+    </button>
+  )
 }
 
 export function SunIcon() {
