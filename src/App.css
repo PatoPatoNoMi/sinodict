@@ -423,6 +423,18 @@
   margin-top: 6px;
 }
 
+.searching-dots span {
+  animation: searching-dot 1.4s infinite;
+  opacity: 0;
+}
+.searching-dots span:nth-child(2) { animation-delay: 0.2s; }
+.searching-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes searching-dot {
+  0%, 60%, 100% { opacity: 0; }
+  30% { opacity: 1; }
+}
+
 .examples {
   display: flex;
   flex-wrap: wrap;

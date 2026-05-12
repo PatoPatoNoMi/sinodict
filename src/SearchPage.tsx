@@ -28,6 +28,7 @@ export default function SearchPage() {
     return f === "zh" || f === "yue" || f === "ja" || f === "ko" ? f : "all"
   })
   const [results, setResults] = useState<SearchResult[]>([])
+  const [searching, setSearching] = useState(false)
 
   let inputRef: HTMLInputElement | null = null
 
@@ -42,13 +43,18 @@ export default function SearchPage() {
   // Run search
   useEffect(() => {
     if (loading || !query.trim()) {
+      setSearching(false)
       setResults([])
       return
     }
+    setSearching(true)
     let stale = false
     const timer = setTimeout(() => {
       search(query.trim(), filter, filter === 'all' && favLang !== 'none' ? favLang : undefined).then((res) => {
-        if (!stale) setResults(res)
+        if (!stale) {
+          setResults(res)
+          setSearching(false)
+        }
       })
     }, 150)
     return () => {
@@ -165,6 +171,15 @@ export default function SearchPage() {
                 {loading
                   ? "Loading dictionary data…"
                   : "Search any word in Japanese/Mandarin/Cantonese/Korean"}
+              </p>
+            </div>
+          ) : searching ? (
+            <div className="empty-state">
+              <p className="empty-hint">
+                Searching for &ldquo;{query}&rdquo;
+                <span className="searching-dots" aria-hidden="true">
+                  <span>.</span><span>.</span><span>.</span>
+                </span>
               </p>
             </div>
           ) : results.length === 0 ? (
