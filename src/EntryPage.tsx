@@ -6,7 +6,7 @@ import { numbersToDiacritics } from "./lib/dictionaries"
 import { LangBadge, EntryCard, LANG_LABEL, SpeakButton } from "./components/shared"
 import { AppHeader } from "./components/AppHeader"
 import { StrokeOrder } from "./components/StrokeOrder"
-import type { SearchResult, PitchAccentEntry } from "./lib/dictionaries"
+import type { SearchResult, PitchAccentEntry, SentencePair } from "./lib/dictionaries"
 import "./App.css"
 
 type SimilarFilter = "all" | "zh" | "yue" | "ja" | "ko"
@@ -97,6 +97,18 @@ function splitMoras(kana: string): string[] {
   return moras
 }
 
+function highlightWord(sentence: string, word: string): ReactNode {
+  const idx = sentence.indexOf(word)
+  if (idx === -1) return sentence
+  return (
+    <>
+      {sentence.slice(0, idx)}
+      <mark className="ex-sentence-highlight">{word}</mark>
+      {sentence.slice(idx + word.length)}
+    </>
+  )
+}
+
 function PitchChart({ kana, pa }: { kana: string; pa: PitchAccentEntry }) {
   const hyphen = pa.accent.indexOf("-")
   if (hyphen === -1) return null
@@ -138,7 +150,7 @@ function PitchChart({ kana, pa }: { kana: string; pa: PitchAccentEntry }) {
 export default function EntryPage() {
   const { word } = useParams<{ word: string }>()
   const location = useLocation()
-  const { search, loading } = useDict()
+  const { search, getSentences, loading } = useDict()
   const { pinyinMode, favLang } = useSettings()
   const py = (raw: string) =>
     pinyinMode === "diacritics" ? numbersToDiacritics(raw) : raw
@@ -149,6 +161,7 @@ export default function EntryPage() {
     passedResult ?? null,
   )
   const [similar, setSimilar] = useState<SearchResult[]>([])
+  const [langSentences, setLangSentences] = useState<Partial<Record<string, SentencePair[]>>>({})
   const [similarFilter, setSimilarFilter] = useState<SimilarFilter>(() =>
     favLang !== "none" ? favLang : "all"
   )
@@ -178,6 +191,29 @@ export default function EntryPage() {
       setLoadingEntry(false)
     })
   }, [word, loading, passedResult, search])
+
+  useEffect(() => {
+    if (!result || loading) { setLangSentences({}); return }
+    const next: Partial<Record<string, SentencePair[]>> = {}
+    const fetches: Promise<void>[] = []
+    if (result.ja?.length) {
+      const w = result.ja[0].kanji
+      fetches.push(getSentences([w], 'ja').then(p => { next.ja = p }))
+    }
+    if (result.zh) {
+      const words = result.traditional === result.simplified
+        ? [result.traditional]
+        : [result.traditional, result.simplified]
+      fetches.push(getSentences(words, 'zh').then(p => { next.zh = p }))
+    }
+    if (result.yue) {
+      fetches.push(getSentences([result.traditional], 'yue').then(p => { next.yue = p }))
+    }
+    if (result.ko) {
+      fetches.push(getSentences([result.ko.hangul], 'ko').then(p => { next.ko = p }))
+    }
+    Promise.all(fetches).then(() => setLangSentences({ ...next }))
+  }, [result, loading, getSentences])
 
   useEffect(() => {
     if (!result || loading) return
@@ -320,6 +356,17 @@ export default function EntryPage() {
                           </div>
                         )
                       })}
+                      {(langSentences.ja?.length ?? 0) > 0 && (
+                        <div className="ex-sentences">
+                          <p className="ex-sentences-label">Examples</p>
+                          {langSentences.ja!.map((s, i) => (
+                            <div key={i} className="ex-sentence-pair">
+                              <p className="ex-sentence-src">{highlightWord(s.src, jaEntries[0].kanji)}</p>
+                              <p className="ex-sentence-en">{s.en}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 }
@@ -338,6 +385,17 @@ export default function EntryPage() {
                           <span key={i} className="de-meaning-pill">{d}</span>
                         ))}
                       </div>
+                      {(langSentences.zh?.length ?? 0) > 0 && (
+                        <div className="ex-sentences">
+                          <p className="ex-sentences-label">Examples</p>
+                          {langSentences.zh!.map((s, i) => (
+                            <div key={i} className="ex-sentence-pair">
+                              <p className="ex-sentence-src">{highlightWord(s.src, result.traditional === result.simplified ? result.traditional : result.simplified)}</p>
+                              <p className="ex-sentence-en">{s.en}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 }
@@ -359,6 +417,17 @@ export default function EntryPage() {
                           <span key={i} className="de-meaning-pill">{d}</span>
                         ))}
                       </div>
+                      {(langSentences.yue?.length ?? 0) > 0 && (
+                        <div className="ex-sentences">
+                          <p className="ex-sentences-label">Examples</p>
+                          {langSentences.yue!.map((s, i) => (
+                            <div key={i} className="ex-sentence-pair">
+                              <p className="ex-sentence-src">{highlightWord(s.src, result.traditional)}</p>
+                              <p className="ex-sentence-en">{s.en}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 }
@@ -382,6 +451,17 @@ export default function EntryPage() {
                           <span key={i} className="de-meaning-pill">{d}</span>
                         ))}
                       </div>
+                      {(langSentences.ko?.length ?? 0) > 0 && (
+                        <div className="ex-sentences">
+                          <p className="ex-sentences-label">Examples</p>
+                          {langSentences.ko!.map((s, i) => (
+                            <div key={i} className="ex-sentence-pair">
+                              <p className="ex-sentence-src">{highlightWord(s.src, result.ko!.hangul)}</p>
+                              <p className="ex-sentence-en">{s.en}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 }

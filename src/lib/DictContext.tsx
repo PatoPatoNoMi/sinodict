@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { SearchResult, WorkerOutMsg, LangKey } from './dictionaries'
+import type { SearchResult, SentencePair, WorkerOutMsg, LangKey } from './dictionaries'
 
 type Filter = 'all' | LangKey
 
@@ -7,6 +7,7 @@ interface DictContextValue {
   loading: boolean
   loadError: string | null
   search: (query: string, filter?: Filter, favLang?: LangKey) => Promise<SearchResult[]>
+  getSentences: (words: string[], lang: LangKey) => Promise<SentencePair[]>
 }
 
 const DictContext = createContext<DictContextValue>(null!)
@@ -15,7 +16,8 @@ export function DictProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const workerRef = useRef<Worker | null>(null)
-  const pendingRef = useRef<Map<number, (r: SearchResult[]) => void>>(new Map())
+  const pendingSearchRef = useRef<Map<number, (r: SearchResult[]) => void>>(new Map())
+  const pendingSentencesRef = useRef<Map<number, (r: SentencePair[]) => void>>(new Map())
   const nextIdRef = useRef(0)
 
   useEffect(() => {
@@ -30,10 +32,16 @@ export function DictProvider({ children }: { children: ReactNode }) {
         setLoading(false)
         setLoadError(msg.message)
       } else if (msg.type === 'results') {
-        const cb = pendingRef.current.get(msg.id)
+        const cb = pendingSearchRef.current.get(msg.id)
         if (cb) {
-          pendingRef.current.delete(msg.id)
+          pendingSearchRef.current.delete(msg.id)
           cb(msg.results)
+        }
+      } else if (msg.type === 'sentences') {
+        const cb = pendingSentencesRef.current.get(msg.id)
+        if (cb) {
+          pendingSentencesRef.current.delete(msg.id)
+          cb(msg.pairs)
         }
       }
     }
@@ -51,11 +59,19 @@ export function DictProvider({ children }: { children: ReactNode }) {
       const trimmed = query.trim()
       if (!trimmed || !workerRef.current) { resolve([]); return }
       const id = nextIdRef.current++
-      pendingRef.current.set(id, resolve)
+      pendingSearchRef.current.set(id, resolve)
       workerRef.current.postMessage({ type: 'search', id, query: trimmed, filter, favLang })
     }), [])
 
-  return <DictContext.Provider value={{ loading, loadError, search }}>{children}</DictContext.Provider>
+  const getSentences = useCallback((words: string[], lang: LangKey): Promise<SentencePair[]> =>
+    new Promise((resolve) => {
+      if (!words.length || !workerRef.current) { resolve([]); return }
+      const id = nextIdRef.current++
+      pendingSentencesRef.current.set(id, resolve)
+      workerRef.current.postMessage({ type: 'sentences', id, words, lang })
+    }), [])
+
+  return <DictContext.Provider value={{ loading, loadError, search, getSentences }}>{children}</DictContext.Provider>
 }
 
 export const useDict = () => useContext(DictContext)

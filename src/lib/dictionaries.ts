@@ -36,12 +36,21 @@ export interface KoEntry {
   definitions: string[]
 }
 
+export interface SentencePair {
+  src: string
+  en: string
+}
+
 export interface DictDB {
   zh: ZhEntry[]
   yue: YueEntry[]
   ja: JaEntry[]
   ko: KoEntry[]
   zhFreq: Map<string, number>   // traditional or simplified → rank (1 = most frequent)
+  sentencesJa: SentencePair[]
+  sentencesZh: SentencePair[]
+  sentencesYue: SentencePair[]
+  sentencesKo: SentencePair[]
 }
 
 export interface SearchResult {
@@ -55,18 +64,15 @@ export interface SearchResult {
 
 export type LangKey = 'zh' | 'yue' | 'ja' | 'ko'
 
-export type WorkerInMsg = {
-  type: 'search'
-  id: number
-  query: string
-  filter: 'all' | LangKey
-  favLang?: LangKey
-}
+export type WorkerInMsg =
+  | { type: 'search'; id: number; query: string; filter: 'all' | LangKey; favLang?: LangKey }
+  | { type: 'sentences'; id: number; words: string[]; lang: LangKey }
 
 export type WorkerOutMsg =
   | { type: 'ready' }
   | { type: 'error'; message: string }
   | { type: 'results'; id: number; results: SearchResult[] }
+  | { type: 'sentences'; id: number; pairs: SentencePair[] }
 
 function kataToHira(s: string): string {
   return s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
@@ -226,6 +232,44 @@ export function parseEdict(text: string): JaEntry[] {
     if (entry) result.push(entry)
   }
   return result
+}
+
+// Tatoeba TSV format: src_id \t src_sentence \t en_id \t en_sentence
+// Deduplicate by src_id, keeping the first English translation per source sentence.
+export function parseSentences(text: string): SentencePair[] {
+  const lines = text.split('\n')
+  const seenIds = new Set<string>()
+  const result: SentencePair[] = []
+  for (const line of lines) {
+    const tab1 = line.indexOf('\t')
+    if (tab1 === -1) continue
+    // Strip BOM from first line if present
+    const id = line.slice(0, tab1).replace(/^﻿/, '')
+    if (seenIds.has(id)) continue
+    seenIds.add(id)
+    const tab2 = line.indexOf('\t', tab1 + 1)
+    if (tab2 === -1) continue
+    const src = line.slice(tab1 + 1, tab2)
+    const tab3 = line.indexOf('\t', tab2 + 1)
+    if (tab3 === -1) continue
+    const en = line.slice(tab3 + 1).trim()
+    if (src && en) result.push({ src, en })
+  }
+  return result
+}
+
+// Find sentences containing any of the given words (tries each word, deduplicates by src).
+export function findSentences(words: string[], sentences: SentencePair[], limit = 3): SentencePair[] {
+  const results: SentencePair[] = []
+  const seen = new Set<string>()
+  for (const pair of sentences) {
+    if (words.some(w => pair.src.includes(w)) && !seen.has(pair.src)) {
+      seen.add(pair.src)
+      results.push(pair)
+      if (results.length >= limit) break
+    }
+  }
+  return results
 }
 
 // kengdic TSV format: id \t hangul \t hanja \t gloss \t ...
