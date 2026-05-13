@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, useLocation, useNavigate } from "react-router-dom"
 import type { SearchResult } from "./lib/dictionaries"
 import { useDict } from "./lib/DictContext"
 import { useSettings } from "./lib/SettingsContext"
@@ -21,6 +21,8 @@ export default function SearchPage() {
   const { loading, loadError, search } = useDict()
   const { favLang } = useSettings()
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+  const navigate = useNavigate()
 
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "")
   const [filter, setFilter] = useState<LangFilter>(() => {
@@ -32,6 +34,18 @@ export default function SearchPage() {
 
   let inputRef: HTMLInputElement | null = null
 
+  // Clear search when logo is clicked (signalled via location.state.reset)
+  useEffect(() => {
+    const state = location.state as { reset?: boolean } | null
+    if (state?.reset) {
+      setQuery("")
+      setFilter("all")
+      setResults([])
+      navigate("/", { replace: true, state: null })
+      inputRef?.focus()
+    }
+  }, [location.key])
+
   // Sync query/filter → URL (replace so Back skips intermediate typing states)
   useEffect(() => {
     const params: Record<string, string> = {}
@@ -42,9 +56,13 @@ export default function SearchPage() {
 
   // Run search
   useEffect(() => {
-    if (loading || !query.trim()) {
+    if (!query.trim()) {
       setSearching(false)
       setResults([])
+      return
+    }
+    if (loading) {
+      setSearching(true)
       return
     }
     setSearching(true)
@@ -81,35 +99,20 @@ export default function SearchPage() {
             </span>
           </h1>
 
-          <div className={`search-box${loading ? " loading" : ""}`}>
+          <div className="search-box">
             <span className="search-icon" aria-hidden="true">
-              {loading ? (
-                <svg
-                  className="spin"
-                  width="19"
-                  height="19"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                >
-                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                </svg>
-              ) : (
-                <svg
-                  width="19"
-                  height="19"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                >
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="m21 21-4.35-4.35" />
-                </svg>
-              )}
+              <svg
+                width="19"
+                height="19"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
             </span>
             <input
               ref={(el) => {
@@ -117,20 +120,15 @@ export default function SearchPage() {
               }}
               type="search"
               className="search-input"
-              placeholder={
-                loading
-                  ? "Loading dictionaries…"
-                  : "Search… 愛 · ài · oi3 · あい · 애 · love"
-              }
+              placeholder="Search… 愛 · ài · oi3 · あい · 애 · love"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              disabled={loading}
               autoComplete="off"
               spellCheck={false}
               autoCorrect="off"
               enterKeyHint="search"
             />
-            {query && !loading && (
+            {query && (
               <button
                 className="search-clear"
                 onClick={clearSearch}
@@ -150,7 +148,6 @@ export default function SearchPage() {
                 aria-selected={filter === key}
                 className={`lang-tab${filter === key ? " active" : ""}`}
                 onClick={() => setFilter(key)}
-                disabled={loading}
                 type="button"
               >
                 {label}
@@ -167,11 +164,7 @@ export default function SearchPage() {
             </div>
           ) : query.trim() === "" ? (
             <div className="empty-state">
-              <p className="empty-hint">
-                {loading
-                  ? "Loading dictionary data…"
-                  : "Search any word in Japanese/Mandarin/Cantonese/Korean"}
-              </p>
+              <p className="empty-hint">Search any word in Japanese/Mandarin/Cantonese/Korean</p>
             </div>
           ) : searching ? (
             <div className="empty-state">

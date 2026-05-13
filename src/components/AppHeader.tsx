@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useTheme } from '../lib/useTheme'
 import { useSettings } from '../lib/SettingsContext'
 import { SunIcon, MoonIcon } from './shared'
@@ -35,11 +35,17 @@ export function AppHeader() {
   const [theme, setTheme] = useTheme()
   const { pinyinMode, setPinyinMode, favLang, setFavLang } = useSettings()
   const [open, setOpen] = useState(false)
+  const navigate = useNavigate()
+
+  function handleLogoClick(e: React.MouseEvent) {
+    e.preventDefault()
+    navigate('/', { state: { reset: true } })
+  }
 
   return (
     <header className="app-header">
       <div className="app-header-inner">
-        <Link to="/" className="app-logo">
+        <Link to="/" onClick={handleLogoClick} className="app-logo">
           <span className="logo-sino">Sino</span>Dict
         </Link>
         <div className="header-actions">
